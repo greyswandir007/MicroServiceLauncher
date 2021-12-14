@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "serviceparams.h"
+#include "servicesettingsdialog.h"
 #include "ui_mainwindow.h"
 
 #include <QFileDialog>
@@ -13,16 +14,19 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->setupUi(this);
     QSettings settings("MSLaunch.ini", QSettings::IniFormat);
     int count = settings.value("allcount").toInt();
-    for(int i = 0; i < count; i++) {
-        ServiceParams serviceParams = readServiceParams(QString("process_%1").arg(i), &settings);
-        allServiceList.append(serviceParams);
-        ui->serviceList->addItem(serviceParams.fileName);
+    serviceConfigurer = new ServiceConfigurer(&settings);
+    if (count > 0) {
+        allServiceList = serviceConfigurer->readServiceList(&settings, "process");
+        runServiceList = serviceConfigurer->readServiceList(&settings, "process_run");
+    } else {
+        allServiceList = serviceConfigurer->readServiceList(&settings, "all");
+        runServiceList = serviceConfigurer->readServiceList(&settings, "run");
     }
-    count = settings.value("runcount").toInt();
-    for(int i = 0; i < count; i++) {
-        ServiceParams serviceParams = readServiceParams(QString("process_run_%1").arg(i), &settings);
-        runServiceList.append(serviceParams);
-        ui->runList->addItem(serviceParams.fileName);
+    for (auto param: allServiceList) {
+        ui->serviceList->addItem(param.fileName);
+    }
+    for (auto param: runServiceList) {
+        ui->runList->addItem(param.fileName);
     }
     ui->environmentEdit->setText(settings.value("env_vars").toString());
     ui->tabWidget->tabBar()->setContextMenuPolicy(Qt::ContextMenuPolicy::CustomContextMenu);
@@ -31,24 +35,21 @@ MainWindow::MainWindow(QWidget *parent) :
 
 MainWindow::~MainWindow() {
     QSettings settings("MSLaunch.ini", QSettings::IniFormat);
-    settings.setValue("allcount", ui->serviceList->count());
-    settings.setValue("runcount", ui->runList->count());
-    for(int i = 0; i < ui->serviceList->count(); i++) {
-        writeServiceParams(QString("process_%1").arg(i), &settings, allServiceList.at(i));
-    }
-    for(int i = 0; i < ui->runList->count(); i++) {
-        writeServiceParams(QString("process_run_%1").arg(i), &settings, runServiceList.at(i));
-    }
+    settings.clear();
+    serviceConfigurer->writeServiceList(&settings, "all", allServiceList);
+    serviceConfigurer->writeServiceList(&settings, "run", runServiceList);
     settings.setValue("env_vars", ui->environmentEdit->toPlainText());
+    serviceConfigurer->storeServiceTypes(&settings);
     settings.sync();
     on_StopAllButton_clicked();
+    delete serviceConfigurer;
     delete ui;
 }
 
 void MainWindow::on_addButton_clicked() {
     QString fname = QFileDialog::getOpenFileName(this, "add service");
     if (fname.length() > 0) {
-        ServiceParams serviceParams = createServiceParams(fname);
+        ServiceParams serviceParams = serviceConfigurer->createServiceParams(fname);
         allServiceList.append(serviceParams);
         ui->serviceList->addItem(serviceParams.fileName);
     }
@@ -97,76 +98,17 @@ void MainWindow::on_StopAllButton_clicked() {
     processList.clear();
 }
 
-void MainWindow::on_runList_itemSelectionChanged() {
-    selectionChanged = true;
-    if (ui->runList->currentRow() >= 0) {
-        ui->commandLineEdit->setText(runServiceList.at(ui->runList->currentRow()).launchParams);
-        ui->launchDelay->setValue(runServiceList.at(ui->runList->currentRow()).launchDelay);
-    } else {
-        qDebug() << "selection changed to -1";
-        ui->commandLineEdit->clear();
-        ui->launchDelay->setValue(0);
-    }
-}
-
-ServiceParams MainWindow::readServiceParams(QString baseName, QSettings *settings) {
-    ServiceParams serviceParams;
-    bool delayConverted;
-    QString process = settings->value(baseName).toString();
-    QString shortName = settings->value(baseName + "_short").toString();
-    QString processPath = settings->value(baseName + "_path").toString();
-    QString launchParams = settings->value(baseName + "_command").toString();
-    int launchDelay = settings->value(baseName + "_delay").toInt(&delayConverted);
-    serviceParams.fullName = process;
-    if (shortName != nullptr && !shortName.isEmpty()) {
-        serviceParams.fileName = shortName;
-    } else {
-        serviceParams.fileName = process.section("/", -1, -1);
-    }
-    if (processPath != nullptr && !processPath.isEmpty()) {
-        serviceParams.filePath = processPath;
-    } else {
-        serviceParams.filePath = process.left(process.length() - serviceParams.fileName.length());
-    }
-    if (launchParams != nullptr && !launchParams.isEmpty()) {
-        serviceParams.launchParams = launchParams;
-    }
-    if (delayConverted) {
-        serviceParams.launchDelay = launchDelay;
-    }
-    serviceParams.mainLaunchParams.append("-jar");
-    serviceParams.mainLaunchParams.append(serviceParams.fileName);
-    return serviceParams;
-}
-
-ServiceParams MainWindow::createServiceParams(QString filename) {
-    ServiceParams serviceParams;
-    serviceParams.fullName = filename;
-    serviceParams.fileName = filename.section("/", -1, -1);
-    serviceParams.filePath = filename.left(filename.length() - serviceParams.fileName.length());
-    serviceParams.mainLaunchParams.append("-jar");
-    serviceParams.mainLaunchParams.append(serviceParams.fileName);
-    return serviceParams;
-}
-
-void MainWindow::writeServiceParams(QString baseName, QSettings *settings, ServiceParams serviceParams) {
-     settings->setValue(baseName, serviceParams.fullName);
-     settings->setValue(baseName + "_short", serviceParams.fileName);
-     settings->setValue(baseName + "_path", serviceParams.filePath);
-     settings->setValue(baseName + "_command", serviceParams.launchParams);
-     settings->setValue(baseName + "_delay", serviceParams.launchDelay);
-}
-
 void MainWindow::createServiceProcess(ServiceParams serviceParams) {
     bool processExists = false;
     for (ServiceForm* service: processList) {
-        if (service->getServiceLaunchParams().fullName.compare(serviceParams.fullName) == 0) {
+        if (service->getServiceParams().fullName.compare(serviceParams.fullName) == 0) {
             processExists = true;
         }
     }
     if (processExists) {
         return;
     }
+    serviceConfigurer->prepareLaunchParams(&serviceParams);
     ServiceForm *process = new ServiceForm(serviceParams);
     processList.append(process);
     ui->tabWidget->addTab(process, serviceParams.fileName);
@@ -183,21 +125,10 @@ void MainWindow::createServiceProcess(ServiceParams serviceParams) {
         }
         env.insert(var.at(0), var.at(1));
     }
+    connect(process, SIGNAL(serviceLaunched(QWidget *)), this, SLOT(serviceProcessLaunched(QWidget *)));
     connect(process, SIGNAL(serviceStarted(QWidget *)), this, SLOT(serviceProcessStarted(QWidget *)));
     connect(process, SIGNAL(serviceFinished(QWidget *)), this, SLOT(serviceProcessFinished(QWidget *)));
     process->startProcess(env);
-}
-
-void MainWindow::on_commandLineEdit_textChanged() {
-    if (ui->runList->currentRow() >= 0 && !selectionChanged) {
-        runServiceList[ui->runList->currentRow()].launchParams = ui->commandLineEdit->toPlainText();
-    }
-}
-
-void MainWindow::on_commandLineEdit_cursorPositionChanged() {
-    if (ui->runList->currentRow() >= 0 && !selectionChanged) {
-        runServiceList[ui->runList->currentRow()].launchParams = ui->commandLineEdit->toPlainText();
-    }
 }
 
 void MainWindow::on_serviceList_customContextMenuRequested(const QPoint &pos) {
@@ -210,11 +141,11 @@ void MainWindow::on_serviceList_customContextMenuRequested(const QPoint &pos) {
     }
 }
 
-void MainWindow::on_launchDelay_valueChanged(int value) {
-    if (ui->runList->currentRow() >= 0 && !selectionChanged) {
-        runServiceList[ui->runList->currentRow()].launchDelay = value;
+void MainWindow::serviceProcessLaunched(QWidget *widget) {
+    int index = ui->tabWidget->indexOf(widget);
+    if (index != -1) {
+        ui->tabWidget->setTabIcon(index, QIcon(":/pictures/YellowButton.png"));
     }
-    selectionChanged = false;
 }
 
 void MainWindow::serviceProcessStarted(QWidget *widget) {
@@ -252,6 +183,26 @@ void MainWindow::on_runList_customContextMenuRequested(const QPoint &pos) {
         menu.addAction("Launch");
         if (menu.exec(ui->runList->mapToGlobal(pos))) {
             createServiceProcess(runServiceList.at(ui->runList->currentRow()));
+        }
+    }
+}
+
+void MainWindow::on_serviceList_itemDoubleClicked(QListWidgetItem *item) {
+    if (item != nullptr) {
+        ServiceSettingsDialog dlg(serviceConfigurer);
+        dlg.setServiceParams(allServiceList.at(ui->serviceList->currentRow()));
+        if (dlg.exec()) {
+            allServiceList[ui->serviceList->currentRow()] = dlg.getServiceParams();
+        }
+    }
+}
+
+void MainWindow::on_runList_itemDoubleClicked(QListWidgetItem *item) {
+    if (item != nullptr) {
+        ServiceSettingsDialog dlg(serviceConfigurer);
+        dlg.setServiceParams(runServiceList.at(ui->runList->currentRow()));
+        if (dlg.exec()) {
+            runServiceList[ui->runList->currentRow()] = dlg.getServiceParams();
         }
     }
 }

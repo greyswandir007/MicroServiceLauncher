@@ -23,15 +23,18 @@ public:
     void startProcess(QProcessEnvironment env);
     void stopProcess();
 
-    ServiceParams getServiceLaunchParams() const;
-    void setServiceLaunchParams(const ServiceParams &value);
+    ServiceParams getServiceParams() const;
+    void setServiceParams(const ServiceParams &value);
 
 signals:
     void serviceFinished(QWidget *);
     void serviceStarted(QWidget *);
+    void serviceLaunched(QWidget *);
 
 private slots:
     void readConsoleReady();
+    void readErrorConsoleReady();
+    void serviceStart();
     void finishedConsole(int code, QProcess::ExitStatus status);
     void timedEvent();
     void on_lineWrapCheck_clicked(bool checked);
@@ -43,12 +46,11 @@ private:
 
     QProcess *process = new QProcess();
     QTextCodec *mainTextCodec = QTextCodec::codecForName("UTF8");
-    ServiceParams serviceLaunchParams;
-    QString command = "java";
+    ServiceParams serviceParams;
     QTimer *delayTimer = nullptr;
     bool started = false;
 
-    QRegularExpression startedInRegEx = QRegularExpression("Started [a-zA-Z0-9]* in [0-9]*[.][0-9]* [a-z]* [(]JVM running for");
+    QRegularExpression startedRegEx;
 
     JsonHighlighter *highlighter = nullptr;
 };

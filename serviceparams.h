@@ -10,6 +10,10 @@ public:
     QString fileName;
     QString filePath;
     QString launchParams;
+    QString launchCommand;
+    QString serviceParams;
+    QString type;
+    QString startedRegex;
     int launchDelay = 0;
 
     QStringList mainLaunchParams;

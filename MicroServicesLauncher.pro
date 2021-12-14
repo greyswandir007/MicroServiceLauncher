@@ -28,17 +28,24 @@ SOURCES += \
         main.cpp \
         mainwindow.cpp \
     jsonhighlighter.cpp \
-    serviceform.cpp
+    serviceform.cpp \
+    serviceconfigurer.cpp \
+    servicesettingsdialog.cpp
 
 HEADERS += \
         mainwindow.h \
     serviceparams.h \
     jsonhighlighter.h \
-    serviceform.h
+    serviceform.h \
+    servicetypes.h \
+    serviceconfigurer.h \
+    servicetype.h \
+    servicesettingsdialog.h
 
 FORMS += \
         mainwindow.ui \
-    serviceform.ui
+    serviceform.ui \
+    servicesettingsdialog.ui
 
 RC_ICONS = MicroServicesLauncher.ico
 

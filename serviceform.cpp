@@ -4,6 +4,7 @@
 #include <QTextCodec>
 #include <QTimer>
 #include <QScrollBar>
+#include <QDebug>
 
 ServiceForm::ServiceForm(QWidget *parent) :
     QWidget(parent),
@@ -17,7 +18,7 @@ ServiceForm::ServiceForm(ServiceParams serviceParams, QWidget *parent) :
     ui(new Ui::ServiceForm) {
     ui->setupUi(this);
     init();
-    setServiceLaunchParams(serviceParams);
+    setServiceParams(serviceParams);
 }
 
 ServiceForm::~ServiceForm() {
@@ -29,11 +30,11 @@ ServiceForm::~ServiceForm() {
 
 void ServiceForm::startProcess(QProcessEnvironment env) {
     process->setProcessEnvironment(env);
-    process->setWorkingDirectory(serviceLaunchParams.filePath);
-    if (serviceLaunchParams.launchDelay == 0) {
-        process->start(command, serviceLaunchParams.mainLaunchParams);
+    process->setWorkingDirectory(serviceParams.filePath);
+    if (serviceParams.launchDelay == 0) {
+        process->start(serviceParams.launchCommand, serviceParams.mainLaunchParams);
     } else  {
-        delayTimer->start(serviceLaunchParams.launchDelay * 1000);
+        delayTimer->start(serviceParams.launchDelay * 1000);
     }
 }
 
@@ -43,16 +44,14 @@ void ServiceForm::stopProcess() {
     process->close();
 }
 
-ServiceParams ServiceForm::getServiceLaunchParams() const {
-    return serviceLaunchParams;
+ServiceParams ServiceForm::getServiceParams() const {
+    return serviceParams;
 }
 
-void ServiceForm::setServiceLaunchParams(const ServiceParams &value) {
-    serviceLaunchParams = value;
-    if (serviceLaunchParams.launchParams != nullptr && !serviceLaunchParams.launchParams.isEmpty()) {
-        serviceLaunchParams.mainLaunchParams.removeLast();
-        serviceLaunchParams.mainLaunchParams.append(serviceLaunchParams.launchParams.split("\n"));
-        serviceLaunchParams.mainLaunchParams.append(serviceLaunchParams.fileName);
+void ServiceForm::setServiceParams(const ServiceParams &value) {
+    serviceParams = value;
+    if (!serviceParams.startedRegex.isEmpty()) {
+        startedRegEx = QRegularExpression(serviceParams.startedRegex);
     }
 }
 
@@ -61,10 +60,21 @@ void ServiceForm::readConsoleReady() {
     QString text = ui->logOutput->toPlainText() + newLine;
     ui->logOutput->setText(text);
     ui->logOutput->verticalScrollBar()->setValue(ui->logOutput->verticalScrollBar()->maximum());
-    if (!started && ui->logOutput->toPlainText().contains(startedInRegEx)) {
+    if (!started && !serviceParams.startedRegex.isEmpty() && ui->logOutput->toPlainText().contains(startedRegEx)) {
         started = true;
         emit serviceStarted(this);
     }
+}
+
+void ServiceForm::readErrorConsoleReady() {
+    QString newLine = mainTextCodec->toUnicode(process->readAllStandardError());
+    QString text = ui->logOutput->toPlainText() + newLine;
+    ui->logOutput->setText(text);
+    ui->logOutput->verticalScrollBar()->setValue(ui->logOutput->verticalScrollBar()->maximum());
+}
+
+void ServiceForm::serviceStart() {
+    emit serviceLaunched(this);
 }
 
 void ServiceForm::finishedConsole(int code, QProcess::ExitStatus status) {
@@ -75,7 +85,7 @@ void ServiceForm::finishedConsole(int code, QProcess::ExitStatus status) {
 
 void ServiceForm::timedEvent() {
     delayTimer->stop();
-    process->start(command, serviceLaunchParams.mainLaunchParams);
+    process->start(serviceParams.launchCommand, serviceParams.mainLaunchParams);
 }
 
 void ServiceForm::on_lineWrapCheck_clicked(bool checked) {
@@ -85,7 +95,10 @@ void ServiceForm::on_lineWrapCheck_clicked(bool checked) {
 void ServiceForm::init() {
     delayTimer = new QTimer(this);
     highlighter = new JsonHighlighter(ui->logOutput->document());
+
     connect(process, SIGNAL(readyReadStandardOutput()), this, SLOT(readConsoleReady()));
+    connect(process, SIGNAL(readyReadStandardError()), this, SLOT(readErrorConsoleReady()));
     connect(process, SIGNAL(finished(int, QProcess::ExitStatus)), this, SLOT(finishedConsole(int, QProcess::ExitStatus)));
+    connect(process, SIGNAL(started()), this, SLOT(serviceStart()));
     connect(delayTimer, SIGNAL(timeout()), this, SLOT(timedEvent()));
 }

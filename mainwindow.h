@@ -1,9 +1,11 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include "serviceconfigurer.h"
 #include "serviceform.h"
 #include "serviceparams.h"
 
+#include <QListWidget>
 #include <QMainWindow>
 #include <QProcess>
 #include <QSettings>
@@ -27,21 +29,16 @@ private slots:
     void on_removeFromLaunchListButton_clicked();
     void on_launchAllButton_clicked();
     void on_StopAllButton_clicked();
-    void on_runList_itemSelectionChanged();
-    void on_commandLineEdit_textChanged();
-    void on_commandLineEdit_cursorPositionChanged();
     void on_serviceList_customContextMenuRequested(const QPoint &pos);
-    void on_launchDelay_valueChanged(int value);
+    void serviceProcessLaunched(QWidget *widget);
     void serviceProcessStarted(QWidget *widget);
     void serviceProcessFinished(QWidget *widget);
     void serviceTabContextMenu(const QPoint& pos);
-
     void on_runList_customContextMenuRequested(const QPoint &pos);
+    void on_serviceList_itemDoubleClicked(QListWidgetItem *item);
+    void on_runList_itemDoubleClicked(QListWidgetItem *item);
 
 private:
-    ServiceParams readServiceParams(QString baseName, QSettings *settings);
-    ServiceParams createServiceParams(QString filename);
-    void writeServiceParams(QString baseName, QSettings *settings, ServiceParams serviceParams);
     void createServiceProcess(ServiceParams serviceParams);
 
     Ui::MainWindow *ui;
@@ -51,6 +48,7 @@ private:
     QList<ServiceParams> allServiceList;
     QList<ServiceParams> runServiceList;
     bool selectionChanged;
+    ServiceConfigurer *serviceConfigurer;
 };
 
 #endif // MAINWINDOW_H

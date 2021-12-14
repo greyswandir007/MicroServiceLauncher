@@ -1,0 +1,7 @@
+*.cpp text
+*.h text
+*.svg text eol=lf
+*.ui text
+*.pro text
+*.qrc text
+*.md text

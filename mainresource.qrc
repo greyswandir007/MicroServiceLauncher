@@ -3,5 +3,6 @@
         <file>GreyButton.png</file>
         <file>GreenButton.png</file>
         <file>RedButton.png</file>
+        <file>YellowButton.png</file>
     </qresource>
 </RCC>
